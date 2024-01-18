@@ -1,0 +1,30 @@
+
+
+
+
+joints 
+  parents
+  meshName
+  children
+   
+
+meshes 
+  name 
+  indices
+  vertices
+
+
+
+{
+  type : robot / object
+  joint_root : 01
+  [
+    {
+
+      meshName : name 
+    }
+  ]
+}
+
+
+1. .dae -> collada 

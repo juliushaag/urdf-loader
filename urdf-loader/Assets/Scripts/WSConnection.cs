@@ -15,7 +15,7 @@ public enum MessageType
     DAT
 }
 
-public class WSConnection : Singleton<WSConnection>
+public class WSConnection : MonoBehaviour
 {
     private enum ClientState
     {
@@ -38,6 +38,8 @@ public class WSConnection : Singleton<WSConnection>
     private WebSocket _webSocket = null;
     private string _connectedIP = null;
     private ClientState _clientState = ClientState.Disconnected;
+
+    private string _buffer = "";
 
 
     // Start is called before the first frame update
@@ -169,16 +171,26 @@ public class WSConnection : Singleton<WSConnection>
         
         string msg = System.Text.Encoding.UTF8.GetString(bytes);
 
-        string []split = msg.Split(HEADER_SEPERATOR );
+        _buffer += msg;
+        
+        if (!msg.EndsWith("</>")) return;
 
-        if (split.Length > 2) Debug.LogWarning($"Invalid message formatting {msg}");
+        _buffer = _buffer.Substring(0, _buffer.Length - "</>".Length);
+        string []split = _buffer.Split(HEADER_SEPERATOR);
+
+        if (split.Length != 2) {
+            Debug.LogWarning($"Invalid message formatting {msg}, this message will be ignored");
+            return;
+        }
+
+        _buffer = "";
 
 
         string header = split[0];
         string content = split[1];
 
         if (!subscribers.ContainsKey(header)) Debug.LogWarning($"Invalid message header received {header}"); // error
-        else subscribers[header].Invoke(content); // call callback 
+        else Task.Run(() => subscribers[header].Invoke(content)); // call callback 
     }
 
    

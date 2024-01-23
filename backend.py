@@ -8,7 +8,7 @@ from typing import Optional, Self, List, Tuple, Union, dataclass_transform
 from collada import Collada
 import time
 
-from udata import UJointType, UMesh, UMeshType, UObjectType, URobot, URobotJoint
+from udata import UData, UHeaderType, UJointType, UMesh, UMeshType, UObjectType, URobot, URobotJoint, UShape
 
 
 start = time.monotonic()
@@ -22,8 +22,6 @@ robot_name = os.path.basename(file_path).split(".")[0]
 
 # # Load a URDF model
 robot = pb.loadURDF(file_path)
-
-
 
 
 # pybullet doc https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit#heading=h.2ye70wns7io3
@@ -64,24 +62,22 @@ class VisualShapeInfo:
     framePosition: Tuple[float, float, float]
     frameOrientation: Tuple[float, float, float, float]
     color: Tuple[float, float, float, float]
-    meshData: MeshData = None
+    meshData: List[MeshData] = None
+    name : str = ""
 
     @staticmethod
-    def from_robot(robot) -> List[Self]:
+    def load_meshes(robot) -> List[Self]:
       shape_data = pb.getVisualShapeData(robot)
       shapes = [VisualShapeInfo(*data) for data in shape_data]
 
       for shape in shapes:
+
         mesh = Collada(shape.meshFile)
+        
+        shape.meshData = [MeshData(prim.indices, prim.vertex, prim.normal) for geom in mesh.geometries for prim in geom.primitives]
 
-        for geom in mesh.geometries:
-          for prim in geom.primitives:
-            shape.meshData = MeshData( # loads mesh data (could be extended to uvs etc.)
-                vertices = prim.vertex.tolist(),
-                normals = prim.normal.tolist() if isinstance(prim.normal, np.ndarray) else prim.normal,
-                indices = prim.indices.tolist() if isinstance(prim.indices, np.ndarray) else prim.indices
-            )
-
+        name = os.path.basename(shape.meshFile.decode("utf-8")).split(".")[0]
+        shape.name = name
       return shapes
 
 @dataclass
@@ -103,7 +99,7 @@ class JointInfo:
   relPos : (float, float, float)
   relOrientation : (float, float, float, float)
   parentIndex : int
-  mesh : VisualShapeInfo = None
+  shapeID : VisualShapeInfo = None
   
   @staticmethod
   def from_robot(robot, jointIndex) -> Self:
@@ -111,45 +107,32 @@ class JointInfo:
 
 
 
-    
-
-    
 num_elements = pb.getNumJoints(robot)
 joints = [JointInfo.from_robot(robot, jointIndex) for jointIndex in range(num_elements)]
-shapeInfo = VisualShapeInfo.from_robot(robot)
+shapeInfo = VisualShapeInfo.load_meshes(robot)
 
-for shape in shapeInfo:
-    mesh_filename = shape.meshFile
-    linkIndex = shape.linkIndex
-    joints[linkIndex].mesh = shape
+for shape in shapeInfo: joints[shape.linkIndex].shapeID = shape.name
 
-def convert_mesh(mesh : VisualShapeInfo) -> UMesh:
-  return UMesh(
-    urdf_to_mesh_type(mesh.geometryType),
-    indices = mesh.meshData.indices,
-    normals = mesh.meshData.normals,
-    vertices= mesh.meshData.vertices,
-    color = mesh.color
-  )
+def convert_shape(shape : VisualShapeInfo) -> UShape:
+  return UShape(shape.name, urdf_to_mesh_type(shape.geometryType), shape.framePosition, shape.frameOrientation, [ UMesh(shape.name, mesh.indices,  mesh.vertices, mesh.normals, shape.color) for mesh in shape.meshData])
 
 def convert_joint(joint : JointInfo) -> URobotJoint:
   return URobotJoint(
     name = joint.name.decode("utf-8"),
-    parentIndex= joint.parentIndex,
-    jointType= urdf_to_joint_type(joint.type),
-    jointAxis= joint.jointAxis,
-    jointPos= joint.relPos,
-    jointRot= joint.relOrientation,
-    mesh=  convert_mesh(joint.mesh) if joint.mesh else None 
+    parentIndex = joint.parentIndex,
+    jointType = urdf_to_joint_type(joint.type),
+    jointAxis = joint.jointAxis,
+    jointPos = joint.relPos,
+    jointRot = joint.relOrientation,
+    meshID = joint.shapeID
   )
 
 
-def convert_robot(robotName, joints : List[JointInfo]) -> URobot:
+def convert_robot(robotName : str, joints : List[JointInfo]) -> URobot:
   return URobot(
     name = robotName,
     rootJointIndex=0,
     joints = [convert_joint(joint) for joint in joints], 
-    type = UObjectType.ROBOT,
     manipulable = False
   )
 
@@ -157,12 +140,44 @@ def convert_robot(robotName, joints : List[JointInfo]) -> URobot:
 
 end = time.monotonic()
 print(f"Took { end - start } s")
+start = end
 
-### Everything loaded 
-class EnhancedJSONEncoder(json.JSONEncoder):
-  def default(self, o): return dataclasses.asdict(o) if dataclasses.is_dataclass(o) else super().default(o)
-    
+header = UData([convert_robot(robot_name, joints)], [convert_shape(shape) for shape in shapeInfo])
+data = header.package()
 
-with open("test.json", "w") as fp:
-  json.dump(convert_robot(robot_name, joints), fp, cls=EnhancedJSONEncoder)
 
+end = time.monotonic()
+print(f"Took { end - start } s")
+
+import websockets
+import asyncio
+
+async def ws_server(websocket, path):
+
+    async def send(type : UHeaderType, data : str):
+        data = type + ":::" + data + "</>"      
+        MAX_SIZE : int = 2**20
+        parts = len(data) // MAX_SIZE + (1 if len(data) % MAX_SIZE else 0)
+        for i in range(parts): await websocket.send(data[i * MAX_SIZE:(i + 1) * MAX_SIZE])
+        
+
+    print("WebSocket: Server Started.")
+
+    for type, message in data:
+      if (type is UHeaderType.MESH): 
+        with open("test.json", "w") as fp: fp.write(message)
+      await send(type, message)
+
+    await send(UHeaderType.BEACON, "Done")
+    await send(UHeaderType.SPAWN, robot_name)
+
+    async for message in websocket:
+          print(message)
+    print("Websocket closed")
+
+
+# Start the WebSocket server
+start_server = websockets.serve(ws_server, "localhost", 8053)
+
+asyncio.get_event_loop().run_until_complete(start_server)
+asyncio.get_event_loop().run_forever()

@@ -75,3 +75,7 @@ crashlytics-build.properties
 test.json
 
 /__pycache__/
+
+urdf-loader/Assets/Packages/
+
+*/.vscode/

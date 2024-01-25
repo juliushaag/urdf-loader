@@ -177,13 +177,13 @@ public class WSConnection : MonoBehaviour
 
         _buffer = _buffer.Substring(0, _buffer.Length - "</>".Length);
         string []split = _buffer.Split(HEADER_SEPERATOR);
+        _buffer = "";
 
         if (split.Length != 2) {
             Debug.LogWarning($"Invalid message formatting {msg}, this message will be ignored");
             return;
         }
 
-        _buffer = "";
 
 
         string header = split[0];

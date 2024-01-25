@@ -7,8 +7,6 @@ from functools import reduce
 import json
 import struct
 from typing import Any, Iterable, Optional, Self, List, Tuple, Union, Set
-from attr import asdict
-from dataclasses_json import dataclass_json
 import numpy as np
 
 
@@ -22,6 +20,7 @@ class UHeaderType(str, Enum):
   UPDATE = "UPDATE"
   BEACON = "BEACON"
   SPAWN  = "SPAWN"
+  DATA = "DATA"
 
 class UJointType(str, Enum):
   REVOLUTE  = "REVOLUTE"
@@ -66,8 +65,8 @@ class UMesh:
       "normals" : self.normals.tolist() if isinstance(self.normals, np.ndarray) else self.normals,
       "color" : self.color
     }
-    
-    return (UHeaderType.MESH, json.dumps(result))
+
+    return result
 
 
 
@@ -77,12 +76,12 @@ class UShape:
   type: UMeshType
   position : List[float]
   rotation : List[float]
+  dimensions : List[float]
   meshes : List[UMesh]
 
   def package(self) -> List[str]:
-    print(self.dimensions)
-    result = [(UHeaderType.SHAPE, json.dumps(dataclass_to_dict_rec(self, exclude={ "meshes" })))]
-    result += [mesh.package() for mesh in self.meshes] if self.meshes else []
+    result = dataclass_to_dict_rec(self, exclude={ "meshes", "dimensions" })
+    result["meshes"] = [mesh.package() for mesh in self.meshes]
     return result
 
 
@@ -103,7 +102,8 @@ class URobot(UEntity):
   joints : List[URobotJoint]
 
   def package(self):
-    return (UHeaderType.ENTITY, json.dumps(dataclass_to_dict_rec(self)))
+    for joint in self.joints: print(joint.name, joint.jointPos)
+    return dataclass_to_dict_rec(self)
 
 
 @dataclass(frozen=True)
@@ -117,8 +117,10 @@ class UData():
   shapes : List[UShape] = None
 
   def package(self) -> List[Tuple[UHeaderType, str]]:
-    shapes = reduce(lambda x, y: x + y, [shape.package() for shape in self.shapes]) if self.shapes else []  
-    entities = [entity.package() for entity in self.entities] if self.entities else []
-    return shapes + entities
+    return {
+      "robots" : [robot.package() for robot in self.entities],
+      "shapes" : { shape.name : shape.package() for shape in self.shapes}
+    }
+  
 
 

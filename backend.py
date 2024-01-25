@@ -57,10 +57,10 @@ class VisualShapeInfo:
     id: int
     linkIndex: int
     geometryType: int
-    dimensions: Tuple[float, ...]
+    dimensions: List[float]
     meshFile: str
-    framePosition: Tuple[float, float, float]
-    frameOrientation: Tuple[float, float, float, float]
+    framePosition: List[float]
+    frameOrientation: List[float]
     color: Tuple[float, float, float, float]
     meshData: List[MeshData] = None
     name : str = ""
@@ -72,10 +72,12 @@ class VisualShapeInfo:
 
       for shape in shapes:
 
-        mesh = Collada(shape.meshFile)
-        
-        shape.meshData = [MeshData(prim.indices, prim.vertex, prim.normal) for geom in mesh.geometries for prim in geom.primitives]
 
+        mesh = Collada(shape.meshFile) # Collada spec: https://www.khronos.org/files/collada_reference_card_1_4.pdf
+        
+        # for prim in obj.primitives(): # for loading materials in the future
+        # materials.add(prim.material)
+        shape.meshData = [MeshData(prim.indices, prim.vertex, prim.normal) for geom in mesh.geometries for prim in geom.primitives]
         name = os.path.basename(shape.meshFile.decode("utf-8")).split(".")[0]
         shape.name = name
       return shapes
@@ -113,17 +115,36 @@ shapeInfo = VisualShapeInfo.load_meshes(robot)
 
 for shape in shapeInfo: joints[shape.linkIndex].shapeID = shape.name
 
+def mj2unity_pos(pos):
+    return [pos[0], -pos[2], pos[1]]
+
+
+def mj2unity_quat(quat):
+    # note that the order is "[x, y, z, w]"
+    return [quat[2], -quat[3], -quat[1], quat[0]]
+
+
+
 def convert_shape(shape : VisualShapeInfo) -> UShape:
-  return UShape(shape.name, urdf_to_mesh_type(shape.geometryType), shape.framePosition, shape.frameOrientation, [ UMesh(shape.name, mesh.indices,  mesh.vertices, mesh.normals, shape.color) for mesh in shape.meshData])
+  pos = shape.framePosition
+  rot = shape.frameOrientation
+  return UShape(
+    shape.name, 
+    urdf_to_mesh_type(shape.geometryType), 
+    pos, 
+    rot, 
+    shape.dimensions, 
+    [UMesh(shape.name, mesh.indices,  mesh.vertices, mesh.normals, shape.color) for mesh in shape.meshData]
+  )
 
 def convert_joint(joint : JointInfo) -> URobotJoint:
   return URobotJoint(
     name = joint.name.decode("utf-8"),
     parentIndex = joint.parentIndex,
     jointType = urdf_to_joint_type(joint.type),
-    jointAxis = joint.jointAxis,
-    jointPos = joint.relPos,
-    jointRot = joint.relOrientation,
+    jointAxis = mj2unity_pos(joint.jointAxis),
+    jointPos = mj2unity_pos(joint.relPos),
+    jointRot = mj2unity_quat(joint.relOrientation),
     meshID = joint.shapeID
   )
 
@@ -144,7 +165,7 @@ start = end
 
 header = UData([convert_robot(robot_name, joints)], [convert_shape(shape) for shape in shapeInfo])
 data = header.package()
-
+string_data = json.dumps(data)
 
 end = time.monotonic()
 print(f"Took { end - start } s")
@@ -155,24 +176,23 @@ import asyncio
 async def ws_server(websocket, path):
 
     async def send(type : UHeaderType, data : str):
-        data = type + ":::" + data + "</>"      
-        MAX_SIZE : int = 2**20
-        parts = len(data) // MAX_SIZE + (1 if len(data) % MAX_SIZE else 0)
-        for i in range(parts): await websocket.send(data[i * MAX_SIZE:(i + 1) * MAX_SIZE])
-        
+      data = type + ":::" + data + "</>"      
+      MAX_SIZE : int = 2**20
+      parts = len(data) // MAX_SIZE + (1 if len(data) % MAX_SIZE else 0)
+      for i in range(parts): await websocket.send(data[i * MAX_SIZE:(i + 1) * MAX_SIZE])
+      
 
     print("WebSocket: Server Started.")
+    ws_start = time.monotonic()
 
-    for type, message in data:
-      if (type is UHeaderType.MESH): 
-        with open("test.json", "w") as fp: fp.write(message)
-      await send(type, message)
+    await send(UHeaderType.DATA, string_data)
+    try:
+      async for message in websocket:
+       print(f"Took {time.monotonic() - ws_start}")
+       print(message)
+    except websockets.exceptions.ConnectionClosedError:
+      print("Client disconneted abnormaly")
 
-    await send(UHeaderType.BEACON, "Done")
-    await send(UHeaderType.SPAWN, robot_name)
-
-    async for message in websocket:
-          print(message)
     print("Websocket closed")
 
 

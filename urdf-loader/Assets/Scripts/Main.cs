@@ -4,6 +4,7 @@ using UnityEngine;
 using Newtonsoft.Json;
 using Unity.VisualScripting;
 using System.Linq;
+using System.Threading;
 
 public class Main : MonoBehaviour
 {
@@ -16,7 +17,9 @@ public class Main : MonoBehaviour
         
         public List<float> Position { get; set; }
 
-        public List<float> Orientation { get; set; }
+        public List<float> Rotation { get; set; }
+
+        public List<MeshData> Meshes { get; set; }
 
     }
 
@@ -54,14 +57,18 @@ public class Main : MonoBehaviour
         public List<float> Color { get; set; }
     }
 
+    [Serializable]
+    private class Data {
+        public List<Robot> Robots { get; set; }
+
+        public Dictionary<string, Shape> Shapes { get; set; }
+    }
+
     [SerializeField] private WSConnection connection;
 
-    private Dictionary<string, Shape> _shapes = new Dictionary<string, Shape>();
+    [SerializeField] private Material robot_material;
 
-    private Dictionary<string, List<MeshData>> _mesh = new Dictionary<string, List<MeshData>>();
-
-    private Dictionary<string, Robot> _robots = new Dictionary<string, Robot>();
-
+    private List<Data> _robots = new List<Data>();
     private bool loaded = false; // TODO just temp
 
     void Update() {
@@ -72,115 +79,69 @@ public class Main : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        connection.subscribe("ENTITY", process_entity);
-        connection.subscribe("MESH", process_mesh);
-        connection.subscribe("SHAPE", process_shape);
-        connection.subscribe("BEACON", process_message);
+        connection.subscribe("DATA", process_entity);
     }
 
-    void process_shape(string data)
-    {
-        try {
-            Shape shape = JsonConvert.DeserializeObject<Shape>(data);
-            _shapes.Add(shape.Name, shape);
-        }  catch (JsonException ex)
-        {
-            Debug.Log("JSON Exception: " + ex.Message);
-        }
-    }
 
-    void process_message(string data)
-    {
-        connection.Send(MessageType.MSG, data);
-    }
-
-    void process_mesh(string data)
-    {
-        try {
-            var mesh = JsonConvert.DeserializeObject<MeshData>(data);
-
-            if (!_mesh.ContainsKey(mesh.ShapeName)) _mesh.Add(mesh.ShapeName, new List<MeshData>());
-            _mesh[mesh.ShapeName].Add(mesh);
-        }  catch (JsonException ex)
-        {
-            Debug.Log("JSON Exception: " + ex.Message);
-        }
-    }
 
     void process_entity(string data)
     {
-
-        Debug.Log(data);
-
         try {
-            var robot = JsonConvert.DeserializeObject<Robot>(data);
-            _robots.Add(robot.Name, robot);
-
-            Debug.Log(_robots.Count);
-            foreach (var kvp in _robots)
-            {
-                Debug.LogFormat("Key = {0}, Value = {1}", kvp.Key, kvp.Value);
-            }
-
+            var robot = JsonConvert.DeserializeObject<Data>(data);
+            _robots.Add(robot);
             loaded = true;
-        }  catch (Exception ex)
-        {
-            Debug.Log("JSON Exception: " + ex.Message);
-        }
+            connection.Send(MessageType.MSG, "Done");
+        }  catch (Exception ex) { Debug.LogError(ex.Message); }
+        
     }
 
     Mesh create_mesh(MeshData data) {
         var mesh = new Mesh();
         
+        Debug.Log(data.ShapeName);
         mesh.vertices = data.Vertices.Select(v => new Vector3(v[0], v[1], v[2])).ToArray();
-        // mesh.normals = data.Normals.Select(v => new Vector3(v[0], v[1], v[2])).ToArray();
-        
         mesh.triangles = data.Indices.SelectMany(innerList => innerList).ToArray();
 
         Color[] colors = new Color[mesh.vertices.Length];
-        for (int i = 0; i < colors.Length; i++) colors[i] = new Color(data.Color[0], data.Color[1], data.Color[2]);
+        for (int i = 0; i < colors.Length; i++) colors[i] = new Color(data.Color[0], data.Color[1], data.Color[2], data.Color[3]);
 
         return mesh;
     }
 
-    GameObject create_joint(GameObject parent, Joint joint) {
+    GameObject create_joint(GameObject parent, Joint joint, Dictionary<string, Shape> shapes) {
 
 
         
         GameObject jointObj = new GameObject(joint.Name);
-        if (parent != null) jointObj.transform.parent = parent.transform;
+        jointObj.transform.SetParent(parent.transform);
 
-        jointObj.transform.SetPositionAndRotation(
-            new Vector3(joint.JointPos[0], joint.JointPos[1], joint.JointPos[2]), 
-            new Quaternion(joint.JointRot[0], joint.JointRot[1], joint.JointRot[2], joint.JointRot[3])
-        );
+        var pos =  new Vector3(joint.JointPos[0], joint.JointPos[1], joint.JointPos[2]);
+        var rot =  new Quaternion(joint.JointRot[0], joint.JointRot[1], joint.JointRot[2], joint.JointRot[3]);
+        rot.eulerAngles = new Vector3(rot.eulerAngles.x, rot.eulerAngles.y, rot.eulerAngles.z);
+        jointObj.transform.SetLocalPositionAndRotation(pos, rot);
 
         if (joint.MeshID == null) return jointObj;
 
-        // Shape shape = _shapes[joint.MeshID];
 
         GameObject visuals = new GameObject("visuals");
-        visuals.transform.parent = jointObj.transform;
+        visuals.transform.SetParent(jointObj.transform);
         
-        // visuals.transform.SetPositionAndRotation(
-        //     new Vector3(shape.Position[0], shape.Position[1],shape.Position[2]), 
-        //     new Quaternion(shape.Orientation[0], shape.Orientation[1], shape.Orientation[2], shape.Orientation[3])
-        // );
+        Shape shape = shapes[joint.MeshID];
+        var spos = new Vector3(shape.Position[0], shape.Position[1],shape.Position[2]);
+        var srot = new Quaternion(shape.Rotation[0], shape.Rotation[1], shape.Rotation[2], shape.Rotation[3]); 
+        visuals.transform.SetLocalPositionAndRotation(spos, srot);
 
-
-
-
-        List<MeshData> data = _mesh[joint.MeshID];
 
         int index = 0;
-        foreach (var mesh in data) {
-            GameObject obj = new GameObject($"visual{index}{mesh.ShapeName}");
-            obj.AddComponent<MeshRenderer>();
-            obj.AddComponent<MeshFilter>().mesh = create_mesh(mesh);
-            
-
-            obj.transform.parent = visuals.transform;
-            
+        foreach (var mesh in shape.Meshes) {
+            GameObject obj = new GameObject($"node{index}");
+            obj.AddComponent<MeshRenderer>().material = robot_material;
+            var meshComp = create_mesh(mesh);
+            meshComp.RecalculateNormals();
+            obj.AddComponent<MeshFilter>().mesh = meshComp;
+            obj.transform.SetParent(visuals.transform, false);
+            obj.transform.rotation = Quaternion.Euler(-90, 0, 0);
+            index++;
         }
 
         return jointObj;
@@ -190,15 +151,19 @@ public class Main : MonoBehaviour
 
         loaded = false;
         
-        Robot robot = _robots[name];
+        Data data = _robots[_robots.Count - 1];
+
+        
 
 
-        var root = create_joint(null, robot.Joints[0]);
-        List<GameObject> realizedJoints = new List<GameObject>{ root };
+        foreach (Robot robot in data.Robots) {
+            
+            GameObject jointObj = new GameObject(robot.Name);
+            List<GameObject> realizedJoints = new List<GameObject>{ create_joint(jointObj, robot.Joints[0], data.Shapes) };
 
-        for (int i = 1; i < robot.Joints.Count; i++) {
-            Debug.Log(i);
-            realizedJoints.Add(create_joint(realizedJoints[robot.Joints[i].ParentIndex], robot.Joints[i]));
+            for (int i = 1; i < robot.Joints.Count; i++) {
+                realizedJoints.Add(create_joint(realizedJoints[robot.Joints[i].ParentIndex], robot.Joints[i], data.Shapes));
+            }
         }
     }
 

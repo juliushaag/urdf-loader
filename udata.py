@@ -29,7 +29,7 @@ class UJointType(str, Enum):
   PLANAR    = "PLANAR"
   FIXED     = "FIXED"
   
-class UMeshType(str, Enum):
+class UGeoType(str, Enum):
   GEOMETRIC = "GEOMETRIC"
   BOX       = "BOX"
   SPHERE    = "SPHERE"
@@ -49,61 +49,62 @@ class UEntity:
   def package(self):
     pass
 
-@dataclass(frozen=True)
+@dataclass
 class UMesh:
-  shapeName : str
-  indices : List[int] = None
-  vertices : List[Tuple[float, float, float]] = None
-  normals : List[Tuple[float, float, float]] = None
-  color : Tuple[float, float, float] = None
-
-  def package(self) -> List[str]: # maybe send as bin   
-    result = {
-      "shapeName" : self.shapeName,
-      "vertices" : self.vertices.tolist() if isinstance(self.vertices, np.ndarray) else self.vertices,
-      "indices" : [[inner[0] for inner in outer] for outer in self.indices.tolist()] if isinstance(self.indices, np.ndarray) else self.indices,
-      "normals" : self.normals.tolist() if isinstance(self.normals, np.ndarray) else self.normals,
-      "color" : self.color
-    }
-
-    return result
+  indices : List[int]
+  vertices : List[List[float]]
+  normals : List[List[float]] = None 
+  color : List[float] = None
 
 
 
 @dataclass(frozen=True)
-class UShape:
+class UVisual:
   name : str
-  type: UMeshType
+  type : str
   position : List[float]
   rotation : List[float]
-  dimensions : List[float]
+  scale : List[float]
   meshes : List[UMesh]
 
-  def package(self) -> List[str]:
-    result = dataclass_to_dict_rec(self, exclude={ "meshes", "dimensions" })
-    result["meshes"] = [mesh.package() for mesh in self.meshes]
-    return result
+  def package(self) -> List[str]: # maybe send as bin   
+    return dataclass_to_dict_rec(self)
 
 
 @dataclass(frozen=True)
-class URobotJoint:
+class UJoint:
   name : str
-  parentIndex : int
+  position : Tuple[float, float, float]
+  rotation : Tuple[float, float, float]
+  parentLink : str
+  childLink : str
   jointType : UJointType
   jointAxis : Tuple[float, float, float]
-  jointPos : Tuple[float, float, float]
-  jointRot : Tuple[float, float, float, float]
-  meshID : str
+
+@dataclass(frozen=True)
+class ULink:
+  name : str
+  visualName : str
+  position : Tuple[float, float, float]
+  rotation : Tuple[float, float, float]
+  
 
 
 @dataclass(frozen=True)
 class URobot(UEntity):
-  rootJointIndex : int
-  joints : List[URobotJoint]
+  joints : List[UJoint]
+  links : List[ULink]
+  visuals : List[UVisual]
 
-  def package(self):
-    for joint in self.joints: print(joint.name, joint.jointPos)
-    return dataclass_to_dict_rec(self)
+  def package(self) -> dict:
+    return {
+      "name" : self.name,
+      "startLink" : self.links[0].name,
+      "manipulable" : self.manipulable,
+      "joints" :  { joint.name : dataclass_to_dict_rec(joint) for joint in self.joints },
+      "links" :   { link.name  : dataclass_to_dict_rec(link) for link in self.links },
+      "visuals" : {visual.name : dataclass_to_dict_rec(visual) for visual in self.visuals }
+    }
 
 
 @dataclass(frozen=True)
@@ -114,13 +115,9 @@ class UObject(UEntity):
 @dataclass(frozen=True)
 class UData():
   entities : List[UEntity] = None
-  shapes : List[UShape] = None
 
-  def package(self) -> List[Tuple[UHeaderType, str]]:
-    return {
-      "robots" : [robot.package() for robot in self.entities],
-      "shapes" : { shape.name : shape.package() for shape in self.shapes}
-    }
+  def package(self) -> List[dict]:
+    return [entity.package() for entity in self.entities]
   
 
 

@@ -5,12 +5,22 @@ using Newtonsoft.Json;
 using Unity.VisualScripting;
 using System.Linq;
 using System.Threading;
+using System.Data;
 
 public class Main : MonoBehaviour
 {
 
     [Serializable]
-    private class Shape
+    private class MeshData
+    {
+        public List<List<int>> Indices { get; set; }
+        public List<List<float>> Vertices { get; set; }
+        public List<List<float>> Normals { get; set; }
+        public List<float> Color { get; set; }
+    }
+
+    [Serializable]
+    private class Visual
     {
         public string Name { get; set; }
         public string Type { get; set; }
@@ -18,6 +28,8 @@ public class Main : MonoBehaviour
         public List<float> Position { get; set; }
 
         public List<float> Rotation { get; set; }
+
+        public List<float> Scale { get; set; }
 
         public List<MeshData> Meshes { get; set; }
 
@@ -29,12 +41,21 @@ public class Main : MonoBehaviour
     {
 
         public string Name { get; set; }
-        public int ParentIndex { get; set; }
+        public List<float> Position { get; set; }
+        public List<float> Rotation { get; set; }
+        public string ParentLink { get; set; }
+        public string ChildLink { get; set; }
         public string JointType { get; set; }
         public List<float> JointAxis { get; set; }
-        public List<float> JointPos { get; set; }
-        public List<float> JointRot { get; set; }
-        public string MeshID { get; set; }
+    }
+
+    [Serializable]
+    private class Link
+    {
+        public string Name { get; set; }
+        public string VisualName { get; set; }
+        public List<float> Position { get; set; }
+        public List<float> Rotation { get; set; }
     }
 
     [Serializable]
@@ -42,33 +63,20 @@ public class Main : MonoBehaviour
     {
         public string Name { get; set; }
         public bool Manipulable { get; set; }
-        public int RootJointIndex { get; set; }
-        public List<Joint> Joints { get; set; }
-    }
 
+        public string StartLink { get; set; }
+        public Dictionary<string, Joint> Joints { get; set; }
 
-    [Serializable]
-    private class MeshData
-    {
-        public string ShapeName { get; set; }
-        public List<List<float>> Vertices { get; set; }
-        public List<List<int>> Indices { get; set; }
-        public List<List<float>> Normals { get; set; }
-        public List<float> Color { get; set; }
-    }
+        public Dictionary<string, Link> Links { get; set; }
 
-    [Serializable]
-    private class Data {
-        public List<Robot> Robots { get; set; }
-
-        public Dictionary<string, Shape> Shapes { get; set; }
+        public Dictionary<string, Visual> Visuals { get; set; } 
     }
 
     [SerializeField] private WSConnection connection;
+    [SerializeField] private Material _defaultMaterial;
 
-    [SerializeField] private Material robot_material;
-
-    private List<Data> _robots = new List<Data>();
+    private List<Robot> _robots;
+    private List<GameObject> _spawnedRobots = new List<GameObject>();
     private bool loaded = false; // TODO just temp
 
     void Update() {
@@ -87,8 +95,8 @@ public class Main : MonoBehaviour
     void process_entity(string data)
     {
         try {
-            var robot = JsonConvert.DeserializeObject<Data>(data);
-            _robots.Add(robot);
+            var robot = JsonConvert.DeserializeObject<List<Robot>>(data);
+            _robots = robot;
             loaded = true;
             connection.Send(MessageType.MSG, "Done");
         }  catch (Exception ex) { Debug.LogError(ex.Message); }
@@ -96,74 +104,83 @@ public class Main : MonoBehaviour
     }
 
     Mesh create_mesh(MeshData data) {
-        var mesh = new Mesh();
         
-        Debug.Log(data.ShapeName);
-        mesh.vertices = data.Vertices.Select(v => new Vector3(v[0], v[1], v[2])).ToArray();
-        mesh.triangles = data.Indices.SelectMany(innerList => innerList).ToArray();
-
-        Color[] colors = new Color[mesh.vertices.Length];
-        for (int i = 0; i < colors.Length; i++) colors[i] = new Color(data.Color[0], data.Color[1], data.Color[2], data.Color[3]);
-
-        return mesh;
+        return new Mesh
+        {
+            vertices = data.Vertices.Select(v => new Vector3(v[0], v[1], v[2])).ToArray(),
+            triangles = data.Indices.SkipWhile(indices => indices.Count != 3).SelectMany(innerList => innerList).ToArray()
+        };
     }
 
-    GameObject create_joint(GameObject parent, Joint joint, Dictionary<string, Shape> shapes) {
+    void create_visual(GameObject parent, Visual visual) {
+
+        GameObject visuals = new GameObject(visual.Name);
+        visuals.transform.SetParent(parent.transform);
+    
+        var spos = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
+        var srot = Quaternion.Euler(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]); 
+        visuals.transform.SetLocalPositionAndRotation(spos, srot);
+
+
+        int index = 0;
+        foreach (var mesh in visual.Meshes) {
+            
+            GameObject obj = new GameObject($"node{index}");
+            obj.AddComponent<MeshRenderer>().material = _defaultMaterial;
+            var meshComp = create_mesh(mesh);
+            meshComp.RecalculateNormals();
+            meshComp.Optimize();          
+            obj.AddComponent<MeshFilter>().mesh = meshComp;
+            obj.transform.SetParent(visuals.transform, false);
+            obj.transform.rotation = Quaternion.Euler(-90, 0, 0);
+            index++;
+        }
+      
+    }
+    
+    GameObject create_link(GameObject parent, Link link, Robot robot) {
+        
+        GameObject linkObj = new GameObject(link.Name);
+        linkObj.transform.SetParent(parent.transform);
+
+        var pos =  new Vector3(link.Position[0], link.Position[1], link.Position[2]);
+        var rot =  Quaternion.Euler(link.Rotation[0], link.Rotation[1], link.Rotation[2]);
+        linkObj.transform.SetLocalPositionAndRotation(pos, rot);
+
+        if (!string.IsNullOrEmpty(link.VisualName)) create_visual(linkObj, robot.Visuals[link.VisualName]); 
+
+        var child = robot.Joints.Values.FirstOrDefault(joint => joint.ParentLink == link.Name);
+        if (child == null) return linkObj;
+        return create_joint(linkObj, child, robot);
+    }
+
+    GameObject create_joint(GameObject parent, Joint joint, Robot robot) {
 
 
         
         GameObject jointObj = new GameObject(joint.Name);
         jointObj.transform.SetParent(parent.transform);
 
-        var pos =  new Vector3(joint.JointPos[0], joint.JointPos[1], joint.JointPos[2]);
-        var rot =  new Quaternion(joint.JointRot[0], joint.JointRot[1], joint.JointRot[2], joint.JointRot[3]);
-        rot.eulerAngles = new Vector3(rot.eulerAngles.x, rot.eulerAngles.y, rot.eulerAngles.z);
+        var pos =  new Vector3(joint.Position[0], joint.Position[1], joint.Position[2]);
+        var rot =  Quaternion.Euler(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2]);
         jointObj.transform.SetLocalPositionAndRotation(pos, rot);
 
-        if (joint.MeshID == null) return jointObj;
-
-
-        GameObject visuals = new GameObject("visuals");
-        visuals.transform.SetParent(jointObj.transform);
-        
-        Shape shape = shapes[joint.MeshID];
-        var spos = new Vector3(shape.Position[0], shape.Position[1],shape.Position[2]);
-        var srot = new Quaternion(shape.Rotation[0], shape.Rotation[1], shape.Rotation[2], shape.Rotation[3]); 
-        visuals.transform.SetLocalPositionAndRotation(spos, srot);
-
-
-        int index = 0;
-        foreach (var mesh in shape.Meshes) {
-            GameObject obj = new GameObject($"node{index}");
-            obj.AddComponent<MeshRenderer>().material = robot_material;
-            var meshComp = create_mesh(mesh);
-            meshComp.RecalculateNormals();
-            obj.AddComponent<MeshFilter>().mesh = meshComp;
-            obj.transform.SetParent(visuals.transform, false);
-            obj.transform.rotation = Quaternion.Euler(-90, 0, 0);
-            index++;
-        }
-
-        return jointObj;
+        return create_link(jointObj, robot.Links[joint.ChildLink], robot);
     }
 
     void spawn_robots(string name) {
 
         loaded = false;
-        
-        Data data = _robots[_robots.Count - 1];
+    
+        foreach (var robot in _spawnedRobots) Destroy(robot);
+        _spawnedRobots.Clear();
 
-        
 
+        foreach (Robot robot in _robots) {
 
-        foreach (Robot robot in data.Robots) {
-            
-            GameObject jointObj = new GameObject(robot.Name);
-            List<GameObject> realizedJoints = new List<GameObject>{ create_joint(jointObj, robot.Joints[0], data.Shapes) };
-
-            for (int i = 1; i < robot.Joints.Count; i++) {
-                realizedJoints.Add(create_joint(realizedJoints[robot.Joints[i].ParentIndex], robot.Joints[i], data.Shapes));
-            }
+            GameObject robotObj = new GameObject(robot.Name);
+            create_link(robotObj, robot.Links[robot.StartLink], robot);
+            _spawnedRobots.Add(robotObj);
         }
     }
 

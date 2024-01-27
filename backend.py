@@ -2,158 +2,77 @@ import dataclasses
 import json
 import os
 import numpy as np
-import pybullet as pb
 from dataclasses import dataclass
 from typing import Optional, Self, List, Tuple, Union, dataclass_transform
-from collada import Collada
+from collada import Collada, primitive
 import time
+from udata import UData, UHeaderType, UMesh, URobot, UJoint, ULink, UVisual
 
-from udata import UData, UHeaderType, UJointType, UMesh, UMeshType, UObjectType, URobot, URobotJoint, UShape
-
+from parsers.urdf_parser import URDFJoint, URDFLink, URDFVisual, URDFData 
 
 start = time.monotonic()
 
-physicsClient = pb.connect(pb.DIRECT)
-
-file_path = "res/models/pybullet/robots/panda_arm_hand.urdf"
-
-robot_name = os.path.basename(file_path).split(".")[0]
+FILE_PATH = "res/models/pybullet/robots/panda_arm_hand.urdf"
+FOLDER = os.path.dirname(FILE_PATH)
 
 
-# # Load a URDF model
-robot = pb.loadURDF(file_path)
+data = URDFData.from_file(FILE_PATH)
+
+def mj2unity_pos(pos): return [-pos[1], pos[2], pos[0]]
 
 
-# pybullet doc https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit#heading=h.2ye70wns7io3
-
-def urdf_to_joint_type(jointType : int) -> UJointType:
-  match jointType:
-    case pb.JOINT_REVOLUTE:   return UJointType.REVOLUTE
-    case pb.JOINT_PRISMATIC:  return UJointType.PRISMATIC
-    case pb.JOINT_SPHERICAL:  return UJointType.SPHERICAL
-    case pb.JOINT_PLANAR:     return UJointType.PLANAR   
-    case pb.JOINT_FIXED:      return UJointType.FIXED    
-  
-
-def urdf_to_mesh_type(meshType : int) -> UMeshType:
-  match meshType:
-    case pb.GEOM_MESH:      return UMeshType.GEOMETRIC 
-    case pb.GEOM_BOX:       return UMeshType.BOX        
-    case pb.GEOM_SPHERE:    return UMeshType.SPHERE     
-    case pb.GEOM_CYLINDER:  return UMeshType.CYLINDER   
-    case pb.GEOM_CAPSULE:   return UMeshType.CAPSULE    
-    case pb.GEOM_PLANE:     return UMeshType.PLANE     
-  
-
-@dataclass
-class MeshData:
-  indices : List[int] 
-  vertices : List[Tuple[float, float, float]]
-  normals : List[Tuple[float, float, float]] = None
-
-    
-@dataclass
-class VisualShapeInfo:
-    id: int
-    linkIndex: int
-    geometryType: int
-    dimensions: List[float]
-    meshFile: str
-    framePosition: List[float]
-    frameOrientation: List[float]
-    color: Tuple[float, float, float, float]
-    meshData: List[MeshData] = None
-    name : str = ""
-
-    @staticmethod
-    def load_meshes(robot) -> List[Self]:
-      shape_data = pb.getVisualShapeData(robot)
-      shapes = [VisualShapeInfo(*data) for data in shape_data]
-
-      for shape in shapes:
-
-
-        mesh = Collada(shape.meshFile) # Collada spec: https://www.khronos.org/files/collada_reference_card_1_4.pdf
-        
-        # for prim in obj.primitives(): # for loading materials in the future
-        # materials.add(prim.material)
-        shape.meshData = [MeshData(prim.indices, prim.vertex, prim.normal) for geom in mesh.geometries for prim in geom.primitives]
-        name = os.path.basename(shape.meshFile.decode("utf-8")).split(".")[0]
-        shape.name = name
-      return shapes
-
-@dataclass
-class JointInfo:
-  index : int
-  name : str
-  type : int
-  qIndex : int #  the first position index in the positional state variables for this body
-  uIndex : int  #  the first velocity index in the velocity state variables for this body
-  flags : int # reserved
-  jointDampingFactor : float
-  jointFriction : float
-  jointLowerLimit : float
-  jointUpperLimit : float
-  jointMaxForce : float
-  jointMaxVelocity : float
-  linkName : float
-  jointAxis : (float, float, float)
-  relPos : (float, float, float)
-  relOrientation : (float, float, float, float)
-  parentIndex : int
-  shapeID : VisualShapeInfo = None
-  
-  @staticmethod
-  def from_robot(robot, jointIndex) -> Self:
-    return JointInfo(*pb.getJointInfo(robot, jointIndex))
+def mj2unity_euler(rot): return [-rot[1], rot[2], rot[0]]
 
 
 
-num_elements = pb.getNumJoints(robot)
-joints = [JointInfo.from_robot(robot, jointIndex) for jointIndex in range(num_elements)]
-shapeInfo = VisualShapeInfo.load_meshes(robot)
 
-for shape in shapeInfo: joints[shape.linkIndex].shapeID = shape.name
-
-def mj2unity_pos(pos):
-    return [pos[0], -pos[2], pos[1]]
+def convert_visual(visual : URDFVisual) -> UVisual:
+  file = FOLDER + visual.geometry.fileName
+  collada_file = Collada(file) 
+  meshes = [UMesh(indices=prim.vertex_index.tolist(), vertices=prim.vertex.tolist()) for geom in collada_file.geometries for prim in geom.primitives]
 
 
-def mj2unity_quat(quat):
-    # note that the order is "[x, y, z, w]"
-    return [quat[2], -quat[3], -quat[1], quat[0]]
-
-
-
-def convert_shape(shape : VisualShapeInfo) -> UShape:
-  pos = shape.framePosition
-  rot = shape.frameOrientation
-  return UShape(
-    shape.name, 
-    urdf_to_mesh_type(shape.geometryType), 
-    pos, 
-    rot, 
-    shape.dimensions, 
-    [UMesh(shape.name, mesh.indices,  mesh.vertices, mesh.normals, shape.color) for mesh in shape.meshData]
+  hasOrigin = visual.origin is not None
+  return UVisual(
+    name=visual.name,
+    type = visual.geometry.type,
+    position=mj2unity_pos(visual.origin.position) if hasOrigin else [0.0, 0.0, 0.0],
+    rotation=mj2unity_euler(visual.origin.rotation) if hasOrigin else [0.0, 0.0, 0.0],
+    scale = visual.geometry.scale,
+    meshes = meshes
   )
 
-def convert_joint(joint : JointInfo) -> URobotJoint:
-  return URobotJoint(
-    name = joint.name.decode("utf-8"),
-    parentIndex = joint.parentIndex,
-    jointType = urdf_to_joint_type(joint.type),
-    jointAxis = mj2unity_pos(joint.jointAxis),
-    jointPos = mj2unity_pos(joint.relPos),
-    jointRot = mj2unity_quat(joint.relOrientation),
-    meshID = joint.shapeID
+def convert_link(link : URDFLink) -> ULink:
+  position = link.origin.position if link.origin is not None else [0.0, 0.0, 0.0]
+  rotation = link.origin.rotation if link.origin is not None else [0.0, 0.0, 0.0]
+  vis_name = link.visual.name if link.visual is not None else None
+
+
+  return ULink(
+    name = link.name,
+    visualName = vis_name,
+    position=position,
+    rotation=rotation
+  )
+
+def convert_joint(joint : URDFJoint) -> UJoint:
+  return UJoint(
+    name = joint.name,
+    parentLink = joint.parent,
+    childLink = joint.child,
+    jointType = joint.type, # TODO convert this properly 
+    jointAxis = mj2unity_pos(joint.axis),
+    position = mj2unity_pos(joint.origin.position) if joint.origin is not None else [0.0, 0.0, 0.0],
+    rotation = mj2unity_euler(joint.origin.rotation) if joint.origin is not None else [0.0, 0.0, 0.0, 1.0]
   )
 
 
-def convert_robot(robotName : str, joints : List[JointInfo]) -> URobot:
+def convert_urdf(data : URDFData) -> URobot:
   return URobot(
-    name = robotName,
-    rootJointIndex=0,
-    joints = [convert_joint(joint) for joint in joints], 
+    name = data.name,
+    links=[convert_link(link) for link in data.links],
+    joints=[convert_joint(joint) for joint in data.joints],
+    visuals=[convert_visual(link.visual) for link in data.links if link.visual is not None],
     manipulable = False
   )
 
@@ -163,17 +82,20 @@ end = time.monotonic()
 print(f"Took { end - start } s")
 start = end
 
-header = UData([convert_robot(robot_name, joints)], [convert_shape(shape) for shape in shapeInfo])
+header = UData([convert_urdf(data)])
 data = header.package()
 string_data = json.dumps(data)
 
 end = time.monotonic()
 print(f"Took { end - start } s")
 
+# with open("test.json", "w") as fp: fp.write(string_data)
+
 import websockets
 import asyncio
 
 async def ws_server(websocket, path):
+
 
     async def send(type : UHeaderType, data : str):
       data = type + ":::" + data + "</>"      

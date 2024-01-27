@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import os
-from typing import Any, Dict, List, Self, Tuple, TypeVar
+from typing import Any, Dict, List, Optional, Self, Tuple, TypeVar
 import xml.etree.ElementTree as ET
 
 ####### Shared properties #######
@@ -16,7 +16,9 @@ def _load_attrib(node : XMLNode, attrib : str, default : Any) -> Any:
 
 def _load_attrib_array(node : XMLNode, attrib : str, default : List[Any], seperator=" "):
   if node is None or attrib not in node.attrib: return default
-  return [type(default[0])(i) for i in node.attrib[attrib].split(seperator)]
+  result = [type(default[0])(i) for i in node.attrib[attrib].split(seperator)]
+  assert len(result) == len(default)
+  return result
 
 
 @dataclass
@@ -29,7 +31,7 @@ class URDFOrigin:
   def parse(node : XMLNode) -> Self:
     return URDFOrigin( 
       _load_attrib_array(node, "xyz", [0.0, 0.0, 0.0]),
-      _load_attrib_array(node, "rpy", [0.0, 0.0, 0.0, 1.0]),
+      _load_attrib_array(node, "rpy", [0.0, 0.0, 0.0]),
     )
   
   def __repr__(self):
@@ -112,20 +114,7 @@ class URDFSafetyController:
       _load_attrib(node, "k_velocity", 0.0)
     )
 
-@dataclass
-class URDFInertia:
-  origin : URDFOrigin
-  mass : float
-  inertia : Dict[str, float]
 
-  @notnone
-  @staticmethod
-  def parse( node : XMLNode):
-    return URDFInertia(
-      URDFOrigin.parse(node.find("origin")),
-      _load_attrib(node, "mass", 0.0),
-      { name : float(value) for name, value in inertia.attrib.items() } if (inertia := node.find("inertia") is not None) else None  # yeah dont care 
-    )
 
 
 @dataclass
@@ -134,14 +123,14 @@ class URDFGeometry:
   size : List[float]    # box
   length : float        # cylinder
   radius : float        # cylinder and sphere
-  fileName : str        # mesh
+  fileName : str        # mesh (relative to the parsed file)
   scale : List[float]
 
   @notnone
   @staticmethod
   def parse( node : XMLNode):
     child = node[0]
-    viztype, = child.tag,
+    viztype = child.tag
     assert child is not None, f"<geometry> field has to have a subfield in node with children"
 
     # very hacky 
@@ -170,7 +159,7 @@ class URDFMaterial:
   @staticmethod
   def parse( node : XMLNode):
     return URDFMaterial(
-      _load_attrib_array(node, "color", [0.0, 0.0, 0.0, 1.0]),
+      _load_attrib_array(node, "color", [0.0, 0.0, 0.0]),
       _load_attrib(node, "filename", "")
     )
 
@@ -185,11 +174,14 @@ class URDFVisual:
   @notnone
   @staticmethod
   def parse( node : XMLNode):
-    assert node.find("geometry") is not None, "<geometry> is a required field in the field <visual>"
+    geometry = URDFGeometry.parse(node.find("geometry"))
+    assert geometry is not None, "<geometry> is a required field in the field <visual>"
+    name = _load_attrib(node, "name", os.path.basename(geometry.fileName).split(".")[0] + "_" + geometry.type) # TODO this is not unique
+
     return URDFVisual(
-      _load_attrib(node, "name", ""),
+      name,
       URDFOrigin.parse(node.find("origin")),
-      URDFGeometry.parse(node.find("geometry")),
+      geometry,
       URDFMaterial.parse(node.find("material"))
     ) 
   
@@ -216,18 +208,24 @@ class URDFCollision:
     )
 
 @dataclass
-class URDFLink:
+class URDFLink: # DOC: https://wiki.ros.org/urdf/XML/link
   name : str
-  inertia : URDFInertia
+  # put inertia in this class because its vital
+  origin : URDFOrigin
+  mass : float
+  inertia : Dict[str, float]
   visual : URDFVisual
   collision : URDFCollision
 
   @notnone
   @staticmethod
   def parse( node : XMLNode):
+    inertial = node.find("inertial")
     return URDFLink(
       _load_attrib(node, "name", ""),
-      URDFInertia.parse(node.find("inertia")),
+      URDFOrigin.parse(inertial.find("origin")) if inertial is not None else None,
+      _load_attrib(inertial, "mass", 0.0) if inertial is not None else None,
+      { name : float(value) for name, value in inertial.attrib.items() } if inertial is not None else None,  # yeah dont care 
       URDFVisual.parse(node.find("visual")),
       URDFCollision.parse(node.find("collsion"))
     )
@@ -237,7 +235,7 @@ class URDFLink:
     return f"<URDFLink {self.name} with visual {self.visual}>"
 
 @dataclass
-class URDFJoint:
+class URDFJoint: # DOC: https://wiki.ros.org/urdf/XML/joint
   name : str
   type : str
   origin : URDFOrigin
@@ -275,32 +273,42 @@ class URDFJoint:
     return f"<URDFJoint {self.name} of type {self.type} with axis {self.axis} and origin {self.origin}>"
 
 
-class UrdfParser: # http://wiki.ros.org/urdf/XML/model
+@dataclass
+class URDFData: # http://wiki.ros.org/urdf/XML/model
+  name : str
+  joints : List[URDFJoint]
+  links : List[URDFLink]
   
-  def __init__(self, file_name : str):
-    fileData = ""
-    with open(file_name, "r") as fp: fileData = fp.read()
+  @staticmethod
+  def parse(data : str, opt_name : Optional[str]= None) -> Optional[Self]:
 
-    robot = ET.XML(fileData)
+    robot = ET.XML(data)
+
+    if not robot: return None
     
-    assert robot is not None, f"Failed to parse the specified file {file_name} as xml"
+    robot_name = robot.attrib["name"] if "name" in robot.attrib else opt_name # if no name specified infere it from the file name
 
-    self.fileName = file_name
-
-    assert robot is not None, f"The supplied file {file_name} does not contain a <robot> tag"
-
-    self.name = robot.attrib["name"] if "name" in robot.attrib else os.path.basename(file_name).split(".")[0] # if no name specified infere it from the file name
-
-    self.joints = [URDFJoint.parse(joint) for joint in robot.findall("joint")]
-    
-    self.links = [URDFLink.parse(link) for link in robot.findall("link")]
-
-    for joint in self.links: print(joint)
-
-    print(self)
+    return URDFData(
+      robot_name,
+      [URDFJoint.parse(joint) for joint in robot.findall("joint")],
+      [URDFLink.parse(link) for link in robot.findall("link")]
+    )  
+  
+  @staticmethod 
+  def from_file(file_path : str) -> Optional[Self]:
+    with open(file_path, "r") as fp: return URDFData.parse(fp.read(), opt_name=os.path.basename(file_path).split(".")[0])
 
   def __repr__(self) -> str:
     return f"<URDFData {self.name}, with {len(self.joints)} joints and {len(self.links)} links>"
 
+
+
+
 if __name__ == "__main__":
-  UrdfParser("res/models/pybullet/robots/camera.urdf")
+  import time
+  start = time.monotonic()
+  parser = URDFData.from_file("res/models/pybullet/robots/panda_arm_hand.urdf")
+  print(parser)
+  print(f"Took {time.monotonic() - start} sec")
+  print("\n".join([str(joint) for joint in parser.joints]))
+  print("\n".join([str(link) for link in parser.links]))

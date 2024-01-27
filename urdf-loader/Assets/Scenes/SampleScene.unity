@@ -384,6 +384,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   connection: {fileID: 648410178}
+  _defaultMaterial: {fileID: 2100000, guid: bb5c4dd3b511c6944a74f99bac0e8e8f, type: 2}
 --- !u!4 &1592830969
 Transform:
   m_ObjectHideFlags: 0

@@ -2,77 +2,15 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Newtonsoft.Json;
-using Unity.VisualScripting;
 using System.Linq;
-using System.Threading;
 using System.Data;
+
 
 public class Main : MonoBehaviour
 {
 
-    [Serializable]
-    private class MeshData
-    {
-        public List<List<int>> Indices { get; set; }
-        public List<List<float>> Vertices { get; set; }
-        public List<List<float>> Normals { get; set; }
-        public List<float> Color { get; set; }
-    }
 
-    [Serializable]
-    private class Visual
-    {
-        public string Name { get; set; }
-        public string Type { get; set; }
-        
-        public List<float> Position { get; set; }
-
-        public List<float> Rotation { get; set; }
-
-        public List<float> Scale { get; set; }
-
-        public List<MeshData> Meshes { get; set; }
-
-    }
-
-
-    [Serializable]
-    private class Joint
-    {
-
-        public string Name { get; set; }
-        public List<float> Position { get; set; }
-        public List<float> Rotation { get; set; }
-        public string ParentLink { get; set; }
-        public string ChildLink { get; set; }
-        public string JointType { get; set; }
-        public List<float> JointAxis { get; set; }
-    }
-
-    [Serializable]
-    private class Link
-    {
-        public string Name { get; set; }
-        public string VisualName { get; set; }
-        public List<float> Position { get; set; }
-        public List<float> Rotation { get; set; }
-    }
-
-    [Serializable]
-    private class Robot
-    {
-        public string Name { get; set; }
-        public bool Manipulable { get; set; }
-
-        public string StartLink { get; set; }
-        public Dictionary<string, Joint> Joints { get; set; }
-
-        public Dictionary<string, Link> Links { get; set; }
-
-        public Dictionary<string, Visual> Visuals { get; set; } 
-    }
-
-    [SerializeField] private WSConnection connection;
+    [SerializeField] private WSConnection _connection;
     [SerializeField] private Material _defaultMaterial;
 
     private List<Robot> _robots;
@@ -87,7 +25,7 @@ public class Main : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        connection.subscribe("DATA", process_entity);
+        _connection.subscribe("DATA", process_entity);
     }
 
 
@@ -98,18 +36,23 @@ public class Main : MonoBehaviour
             var robot = JsonConvert.DeserializeObject<List<Robot>>(data);
             _robots = robot;
             loaded = true;
-            connection.Send(MessageType.MSG, "Done");
-        }  catch (Exception ex) { Debug.LogError(ex.Message); }
+            _connection.Send(MessageType.MSG, "Done");
+        }  catch (Exception ex) { Debug.LogError(ex.Message); _connection.Send(MessageType.MSG, ex.Message); }
         
     }
 
     Mesh create_mesh(MeshData data) {
         
-        return new Mesh
+        var mesh =  new Mesh
         {
             vertices = data.Vertices.Select(v => new Vector3(v[0], v[1], v[2])).ToArray(),
             triangles = data.Indices.SkipWhile(indices => indices.Count != 3).SelectMany(innerList => innerList).ToArray()
         };
+
+        mesh.RecalculateNormals();
+        mesh.Optimize();  
+
+        return mesh;
     }
 
     void create_visual(GameObject parent, Visual visual) {
@@ -122,18 +65,15 @@ public class Main : MonoBehaviour
         visuals.transform.SetLocalPositionAndRotation(spos, srot);
 
 
-        int index = 0;
-        foreach (var mesh in visual.Meshes) {
+        for (int i = 0; i < visual.Meshes.Count; i++) {
             
-            GameObject obj = new GameObject($"node{index}");
+            GameObject obj = new GameObject($"node{i}");
+
             obj.AddComponent<MeshRenderer>().material = _defaultMaterial;
-            var meshComp = create_mesh(mesh);
-            meshComp.RecalculateNormals();
-            meshComp.Optimize();          
-            obj.AddComponent<MeshFilter>().mesh = meshComp;
-            obj.transform.SetParent(visuals.transform, false);
-            obj.transform.rotation = Quaternion.Euler(-90, 0, 0);
-            index++;
+            obj.AddComponent<MeshFilter>().mesh = create_mesh(visual.Meshes[i]);
+
+            obj.transform.SetParent(visuals.transform);
+            obj.transform.localRotation = Quaternion.Euler(-90, 0, 0);
         }
       
     }
@@ -156,8 +96,6 @@ public class Main : MonoBehaviour
 
     GameObject create_joint(GameObject parent, Joint joint, Robot robot) {
 
-
-        
         GameObject jointObj = new GameObject(joint.Name);
         jointObj.transform.SetParent(parent.transform);
 

@@ -12,7 +12,8 @@ public enum MessageType
 {
     CMD,
     MSG,
-    DAT
+    DAT,
+    ERR
 }
 
 public class WSConnection : MonoBehaviour
@@ -61,6 +62,7 @@ public class WSConnection : MonoBehaviour
             MessageType.CMD => "CMD",
             MessageType.DAT => "DAT",
             MessageType.MSG => "MSG",
+            MessageType.ERR => "ERR",
             _ => "INV"
         };
 
@@ -129,11 +131,9 @@ public class WSConnection : MonoBehaviour
         WebSocket testWebSocket = new WebSocket($"ws://{ipAddress}:{port}");
 
         Task connectTask = testWebSocket.Connect();
-        yield return new WaitUntil(() =>
-        {
-            return testWebSocket.State == WebSocketState.Open ||
-                    testWebSocket.State == WebSocketState.Closed;
-        });
+
+        // wait until the websocket has updated 
+        yield return new WaitUntil(() => testWebSocket.State == WebSocketState.Open || testWebSocket.State == WebSocketState.Closed);
 
         if (testWebSocket.State == WebSocketState.Open && _webSocket == null)
         {

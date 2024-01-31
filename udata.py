@@ -59,10 +59,25 @@ class UMesh:
   vertices : List[List[float]]
   normals : List[List[float]] = None 
   color : List[float] = None
+  material : str = None
 
   def __repr__(self):
     return f"<UMesh {self.name} with {len(self.indices) } indices and {len(self.vertices)} vertices>"
 
+
+@dataclass
+class UMaterial:
+  name : str
+  id : str
+  emission : List[float] 
+  ambient : List[float]
+  diffuse : List[float]
+  specular : List[float]
+  shininess : float
+  reflective : List[float]
+  reflectivity : float 
+  transparent : List[float]
+  transparency : float 
 
 
 @dataclass(frozen=True)
@@ -73,11 +88,13 @@ class UVisual:
   rotation : List[float]
   scale : List[float]
   meshes : List[UMesh]
+  materials : List[UMaterial]
 
   def package(self) -> List[str]: # maybe send as bin   
-    return dataclass_to_dict_rec(self)
-
-
+    result = dataclass_to_dict_rec(self)
+    result['materials'] = { mat.id : dataclass_to_dict_rec(mat) for mat in self.materials }
+    return result 
+  
 @dataclass(frozen=True)
 class UJoint:
   name : str
@@ -106,11 +123,11 @@ class URobot(UEntity):
   def package(self) -> dict:
     return {
       "name" : self.name,
-      "startJoint" : [link for link in self.links if "0" in link.name][0].name,
+      "startLink" : self.links[0].name,
       "manipulable" : self.manipulable,
       "joints" :  { joint.name : dataclass_to_dict_rec(joint) for joint in self.joints },
       "links" :   { link.name  : dataclass_to_dict_rec(link) for link in self.links },
-      "visuals" : {visual.name : dataclass_to_dict_rec(visual) for visual in self.visuals }
+      "visuals" : { visual.name : visual.package() for visual in self.visuals }
     }
 
 

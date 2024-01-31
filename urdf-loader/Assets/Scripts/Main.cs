@@ -33,13 +33,14 @@ public class Main : MonoBehaviour
     void process_entity(string data)
     {
         try {
-            var robot = JsonConvert.DeserializeObject<List<Robot>>(data);
-            _robots = robot;
+            _robots = JsonConvert.DeserializeObject<List<Robot>>(data);
+            _connection.Send(MessageType.MSG, "Model loaded sucessfully");
             loaded = true;
-            _connection.Send(MessageType.MSG, "Done");
-        }  catch (Exception ex) { Debug.LogError(ex.Message); _connection.Send(MessageType.MSG, ex.Message); }
+        }  catch (Exception ex) { Error(ex.Message); }
         
     }
+
+
 
     Mesh create_mesh(MeshData data) {
         
@@ -54,6 +55,7 @@ public class Main : MonoBehaviour
 
         return mesh;
     }
+
 
     void create_visual(GameObject parent, Visual visual) {
 
@@ -124,14 +126,20 @@ public class Main : MonoBehaviour
         foreach (var robot in _spawnedRobots) Destroy(robot);
         _spawnedRobots.Clear();
 
+        try {
+            foreach (Robot robot in _robots) {
 
-        foreach (Robot robot in _robots) {
-
-            GameObject robotObj = new GameObject(robot.Name);
-            create_link(robotObj, robot.Links[robot.StartJoint], robot);
-            _spawnedRobots.Add(robotObj);
-        }
+                GameObject robotObj = new GameObject(robot.Name);
+                create_link(robotObj, robot.Links[robot.StartLink], robot);
+                _spawnedRobots.Add(robotObj);
+            }
+        } catch (Exception ex) { Error(ex.Message); }
+        
     }
 
+    private void Error(string message) {
+        if (_connection != null) _connection.Send(MessageType.ERR, message);
+        Debug.LogError(message);
+    }
     
 }

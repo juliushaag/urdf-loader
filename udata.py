@@ -51,10 +51,17 @@ class UEntity:
 
 @dataclass
 class UMesh:
+  name : str
+  position : List[float]
+  rotation : List[float]
+  scale : List[float]
   indices : List[int]
   vertices : List[List[float]]
   normals : List[List[float]] = None 
   color : List[float] = None
+
+  def __repr__(self):
+    return f"<UMesh {self.name} with {len(self.indices) } indices and {len(self.vertices)} vertices>"
 
 
 
@@ -78,8 +85,8 @@ class UJoint:
   rotation : Tuple[float, float, float]
   parentLink : str
   childLink : str
-  jointType : UJointType
-  jointAxis : Tuple[float, float, float]
+  type : UJointType
+  axis : Tuple[float, float, float]
 
 @dataclass(frozen=True)
 class ULink:
@@ -99,7 +106,7 @@ class URobot(UEntity):
   def package(self) -> dict:
     return {
       "name" : self.name,
-      "startLink" : self.links[0].name,
+      "startJoint" : [link for link in self.links if "0" in link.name][0].name,
       "manipulable" : self.manipulable,
       "joints" :  { joint.name : dataclass_to_dict_rec(joint) for joint in self.joints },
       "links" :   { link.name  : dataclass_to_dict_rec(link) for link in self.links },

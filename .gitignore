@@ -77,8 +77,10 @@ test.json
 
 urdf-loader/Assets/Packages/
 
-*/.vscode/
-
+.vscode/
 temp/
-
 __pycache__/
+*__init__.py
+*.meta
+*.prefab
+*.asset

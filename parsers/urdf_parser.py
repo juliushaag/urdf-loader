@@ -286,7 +286,7 @@ class URDFData: # http://wiki.ros.org/urdf/XML/model
 
     if not robot: return None
     
-    robot_name = robot.attrib["name"] if "name" in robot.attrib else opt_name # if no name specified infere it from the file name
+    robot_name = robot.attrib["name"] if "name" in robot.attrib else opt_name 
 
     return URDFData(
       robot_name,
@@ -296,7 +296,7 @@ class URDFData: # http://wiki.ros.org/urdf/XML/model
   
   @staticmethod 
   def from_file(file_path : str) -> Optional[Self]:
-    with open(file_path, "r") as fp: return URDFData.parse(fp.read(), opt_name=os.path.basename(file_path).split(".")[0])
+    with open(file_path, "r") as fp: return URDFData.parse(fp.read(), opt_name=os.path.basename(file_path).split(".")[0]) # if no name specified infere it from the file name
 
   def __repr__(self) -> str:
     return f"<URDFData {self.name}, with {len(self.joints)} joints and {len(self.links)} links>"

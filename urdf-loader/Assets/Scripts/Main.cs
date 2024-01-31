@@ -46,7 +46,7 @@ public class Main : MonoBehaviour
         var mesh =  new Mesh
         {
             vertices = data.Vertices.Select(v => new Vector3(v[0], v[1], v[2])).ToArray(),
-            triangles = data.Indices.SkipWhile(indices => indices.Count != 3).SelectMany(innerList => innerList).ToArray()
+            triangles = data.Indices.Where(indices => indices.Count == 3).SelectMany(innerList => innerList).ToArray()
         };
 
         mesh.RecalculateNormals();
@@ -57,53 +57,64 @@ public class Main : MonoBehaviour
 
     void create_visual(GameObject parent, Visual visual) {
 
-        GameObject visuals = new GameObject(visual.Name);
+        GameObject visuals = new GameObject("Visuals");
         visuals.transform.SetParent(parent.transform);
+
     
         var spos = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
-        var srot = Quaternion.Euler(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]); 
-        visuals.transform.SetLocalPositionAndRotation(spos, srot);
+        var srot = new Vector3(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]); 
+        srot *= 180f / Mathf.PI;
+        visuals.transform.SetLocalPositionAndRotation(spos, Quaternion.Euler(srot));
 
 
         for (int i = 0; i < visual.Meshes.Count; i++) {
-            
-            GameObject obj = new GameObject($"node{i}");
+            MeshData mesh = visual.Meshes[i];
+
+            GameObject obj = new GameObject(mesh.Name);
 
             obj.AddComponent<MeshRenderer>().material = _defaultMaterial;
-            obj.AddComponent<MeshFilter>().mesh = create_mesh(visual.Meshes[i]);
+            obj.AddComponent<MeshFilter>().mesh = create_mesh(mesh);
+            
+            var pos = new Vector3(mesh.Position[0], mesh.Position[1], mesh.Position[2]);
+            var rot = new Vector3(mesh.Rotation[0], mesh.Rotation[1], mesh.Rotation[2]); 
+            rot *= 180f / Mathf.PI;
+            obj.transform.SetLocalPositionAndRotation(pos, Quaternion.Euler(rot));
+            obj.transform.localScale = new Vector3(mesh.Scale[0], mesh.Scale[1], mesh.Scale[2]);
 
             obj.transform.SetParent(visuals.transform);
-            obj.transform.localRotation = Quaternion.Euler(-90, 0, 0);
         }
       
     }
-    
     GameObject create_link(GameObject parent, Link link, Robot robot) {
-        
-        GameObject linkObj = new GameObject(link.Name);
-        linkObj.transform.SetParent(parent.transform);
 
-        var pos =  new Vector3(link.Position[0], link.Position[1], link.Position[2]);
-        var rot =  Quaternion.Euler(link.Rotation[0], link.Rotation[1], link.Rotation[2]);
-        linkObj.transform.SetLocalPositionAndRotation(pos, rot);
-
-        if (!string.IsNullOrEmpty(link.VisualName)) create_visual(linkObj, robot.Visuals[link.VisualName]); 
-
-        var child = robot.Joints.Values.FirstOrDefault(joint => joint.ParentLink == link.Name);
-        if (child == null) return linkObj;
-        return create_joint(linkObj, child, robot);
-    }
-
-    GameObject create_joint(GameObject parent, Joint joint, Robot robot) {
-
-        GameObject jointObj = new GameObject(joint.Name);
+        GameObject jointObj = new GameObject(link.Name);
         jointObj.transform.SetParent(parent.transform);
 
-        var pos =  new Vector3(joint.Position[0], joint.Position[1], joint.Position[2]);
-        var rot =  Quaternion.Euler(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2]);
-        jointObj.transform.SetLocalPositionAndRotation(pos, rot);
+        if (!string.IsNullOrEmpty(link.VisualName)) create_visual(jointObj, robot.Visuals[link.VisualName]); 
+        // Collision could be created here
 
-        return create_link(jointObj, robot.Links[joint.ChildLink], robot);
+        var joints = robot.Joints.Values.Where(joint => joint.ParentLink == link.Name);
+
+
+
+        foreach (var jnt in joints) create_joint(jointObj, jnt, robot);   
+        
+        return jointObj;
+    }
+
+    
+    GameObject create_joint(GameObject parent, Joint joint, Robot robot) {
+
+        var linkObj = create_link(parent, robot.Links[joint.ChildLink], robot);
+        
+        var pos =  new Vector3(joint.Position[0], joint.Position[1], joint.Position[2]);
+        var rot =  new Vector3(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2]);
+        
+        rot *= 180f / Mathf.PI;;
+        linkObj.transform.SetLocalPositionAndRotation(pos, Quaternion.Euler(rot));
+        
+
+        return linkObj;
     }
 
     void spawn_robots(string name) {
@@ -117,7 +128,7 @@ public class Main : MonoBehaviour
         foreach (Robot robot in _robots) {
 
             GameObject robotObj = new GameObject(robot.Name);
-            create_link(robotObj, robot.Links[robot.StartLink], robot);
+            create_link(robotObj, robot.Links[robot.StartJoint], robot);
             _spawnedRobots.Add(robotObj);
         }
     }

@@ -1,3 +1,4 @@
+import functools
 import json
 import math
 import os
@@ -6,14 +7,19 @@ import time
 import numpy as np
 from udata import UData, UHeaderType, UMesh, URobot, UJoint, ULink, UVisual
 from scipy.spatial.transform import Rotation as R
-from collada import Collada
-from collada import Collada, primitive
 from print_color import print as cprint
 from parsers.urdf_parser import URDFJoint, URDFLink, URDFVisual, URDFData 
 import trimesh
 # ws imports
 import websockets
 import asyncio
+
+
+# FILE_PATH = "res/models/test/panda.urdf"
+
+FILE_PATH = "res/models/pybullet/robots/panda_arm_hand.urdf"
+FOLDER = os.path.dirname(FILE_PATH)
+
 
 def mj2unity_pos(pos): return [-pos[1], pos[2], pos[0]]
 def mj2unity_euler(rot): return [rot[2], rot[1], -rot[0]]
@@ -23,17 +29,14 @@ def decompose_transform_matrix(matrix):
     rot = R.from_matrix(np.dot(u, np.dot(np.diag(sigma), vt))).as_euler("zyx")
     return rot.tolist(), matrix[:3, 3].tolist()
 
+_meshes = {}
+
 def convert_mesh(mesh : trimesh.base.Trimesh, matrix : np.ndarray, name : str) -> UMesh:
+  conv = lambda x: [-x[0], x[1], x[2]]
 
-  conv = lambda x: [x[2], x[1], -x[0]]
-
-  verts = [conv(x) for x in mesh.vertices.tolist()]
-  norms = [conv(x) for x in mesh.vertex_normals.tolist()]
-  indices = mesh.faces.flatten().tolist()
-
-  print(len(verts), len(indices), len(norms))
-
-
+  verts = [conv(x) for x in mesh.vertices]
+  norms = [conv(x) for x in mesh.vertex_normals]
+  indices = np.concatenate((mesh.faces[:, [2]], mesh.faces[:, [1]], mesh.faces[:, [0]]), axis=1).flatten().tolist()
 
   rot, pos = decompose_transform_matrix(matrix)
   pos = [-pos[1], pos[2], -pos[0]]
@@ -45,18 +48,23 @@ def convert_mesh(mesh : trimesh.base.Trimesh, matrix : np.ndarray, name : str) -
 
 
 def convert_visual(visual : URDFVisual) -> UVisual:
-
   file = visual.geometry.fileName.replace("package:/", FOLDER)
-  scene = trimesh.load(file, force='scene')
-  meshes = [convert_mesh(scene.geometry[item['geometry']], item['matrix'], item['geometry']) for item in scene.graph.transforms.edge_data.values()]
+  if FOLDER not in file: file = FOLDER + file
 
+  if file not in _meshes:
+    scene = trimesh.load(file, force='scene')
+    meshes = [convert_mesh(scene.geometry[item['geometry']], item['matrix'], item['geometry']) for item in scene.graph.transforms.edge_data.values()]
+    _meshes[file] = meshes
+
+  meshes = _meshes[file]
 
   hasOrigin = visual.origin is not None
+  # if hasOrigin: print(visual.name, visual.origin.rotation)
   return UVisual(
     name=visual.name,
     type = visual.geometry.type,
     position=mj2unity_pos(visual.origin.position) if hasOrigin else [0.0, 0.0, 0.0],
-    rotation=mj2unity_euler(visual.origin.rotation) if hasOrigin else [0.0, 0.0, 0.0],
+    rotation=visual.origin.rotation if hasOrigin else [0.0, 0.0, 0.0],
     scale = visual.geometry.scale,
     meshes = meshes,
     materials=[]
@@ -93,9 +101,6 @@ def convert_urdf(data : URDFData) -> URobot:
 
 start = time.monotonic()
 
-FILE_PATH = "res/models/test/panda.urdf"
-FOLDER = os.path.dirname(FILE_PATH)
-
 
 data = URDFData.from_file(FILE_PATH)
 
@@ -104,7 +109,7 @@ data = header.package()
 string_data = json.dumps(data)
 
 dia_start = time.monotonic()
-# with open("test.json", "w") as fp: json.dump(data, indent=2, fp=fp)
+with open("test.json", "w") as fp: json.dump(data, indent=2, fp=fp)
 
 end = time.monotonic()
 cprint(f"Compiling took {dia_start - start :.2f}s (debugging {end - dia_start:.2f})", tag="TIME", tag_color="blue", color='white')

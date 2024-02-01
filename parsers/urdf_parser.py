@@ -36,6 +36,9 @@ class URDFOrigin:
   
   def __repr__(self):
     return f"{self.position}, {self.rotation}"
+  
+  def __hash__(self):
+    return hash((*self.position, *self.rotation))
 
 @dataclass
 class URDFCalibration:
@@ -175,12 +178,13 @@ class URDFVisual:
   @staticmethod
   def parse( node : XMLNode):
     geometry = URDFGeometry.parse(node.find("geometry"))
+    origin = URDFOrigin.parse(node.find("origin"))
     assert geometry is not None, "<geometry> is a required field in the field <visual>"
-    name = _load_attrib(node, "name", os.path.basename(geometry.fileName).split(".")[0] + "_" + geometry.type) # TODO this is not unique
+    name = _load_attrib(node, "name", os.path.basename(geometry.fileName).split(".")[0] + "_" + geometry.type + str(hash(origin))) # TODO this is not unique
 
     return URDFVisual(
       name,
-      URDFOrigin.parse(node.find("origin")),
+      origin,
       geometry,
       URDFMaterial.parse(node.find("material"))
     ) 

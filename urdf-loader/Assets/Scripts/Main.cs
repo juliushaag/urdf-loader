@@ -51,7 +51,6 @@ public class Main : MonoBehaviour
             triangles = data.Indices.ToArray()
         };
 
-        mesh.RecalculateNormals();
         mesh.Optimize();  
 
         return mesh;
@@ -62,17 +61,10 @@ public class Main : MonoBehaviour
 
         GameObject visuals = new GameObject("Visuals");
         visuals.transform.SetParent(parent.transform);
-
-    
-        var spos = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
-        var srot = new Vector3(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]); 
-        srot *= 180f / Mathf.PI;
         
-        _connection.Send(MessageType.MSG, $"{visual.Name} : {visual.Rotation[0]} {visual.Rotation[1]} {visual.Rotation[2]}");
-        visuals.transform.localPosition = spos;
-        visuals.transform.Rotate(srot);
-        _connection.Send(MessageType.MSG, $"{visual.Name} : {visuals.transform.localEulerAngles.x} {visuals.transform.localEulerAngles.y} {visuals.transform.localEulerAngles.z}");
-
+        visuals.transform.localPosition = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
+        visuals.transform.localEulerAngles = new Vector3(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]) * 180f / Mathf.PI;
+    
 
         for (int i = 0; i < visual.Meshes.Count; i++) {
             MeshData mesh = visual.Meshes[i];
@@ -80,13 +72,11 @@ public class Main : MonoBehaviour
             GameObject obj = new GameObject(mesh.Name);
 
             obj.AddComponent<MeshRenderer>().material = _defaultMaterial;
-            obj.AddComponent<MeshFilter>().mesh = create_mesh(mesh);
-            
-            var pos = new Vector3(mesh.Position[0], mesh.Position[1], mesh.Position[2]);
-            var rot = new Vector3(mesh.Rotation[0], mesh.Rotation[1], mesh.Rotation[2]); 
-            rot *= 180f / Mathf.PI;
-            obj.transform.SetLocalPositionAndRotation(pos, Quaternion.Euler(rot));
+            obj.AddComponent<MeshFilter>().mesh = create_mesh(mesh); 
+         
             obj.transform.localScale = new Vector3(mesh.Scale[0], mesh.Scale[1], mesh.Scale[2]);
+            obj.transform.localPosition = new Vector3(mesh.Position[0], mesh.Position[1], mesh.Position[2]);
+            obj.transform.localEulerAngles = new Vector3(mesh.Rotation[0], mesh.Rotation[1], mesh.Rotation[2])  * 180f / Mathf.PI; 
 
             obj.transform.SetParent(visuals.transform);
         }
@@ -113,14 +103,10 @@ public class Main : MonoBehaviour
     GameObject create_joint(GameObject parent, Joint joint, Robot robot) {
 
         var linkObj = create_link(parent, robot.Links[joint.ChildLink], robot);
-        
-        var pos =  new Vector3(joint.Position[0], joint.Position[1], joint.Position[2]);
-        var rot =  new Vector3(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2]);
-        
-        rot *= 180f / Mathf.PI;;
-        linkObj.transform.SetLocalPositionAndRotation(pos, Quaternion.Euler(rot));
-        
-
+    
+        linkObj.transform.localPosition = new Vector3(joint.Position[0], joint.Position[1], joint.Position[2]);
+        linkObj.transform.localEulerAngles = new Vector3(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2]) * 180f / Mathf.PI;
+    
         return linkObj;
     }
 

@@ -8,7 +8,7 @@ public class MeshData
     public List<float> Position { get; set; }
     public List<float> Rotation { get; set; }
     public List<float> Scale { get; set; }
-    public List<List<int>> Indices { get; set; }
+    public List<int> Indices { get; set; }
     public List<List<float>> Vertices { get; set; }
     public List<List<float>> Normals { get; set; }
     public List<float> Color { get; set; }

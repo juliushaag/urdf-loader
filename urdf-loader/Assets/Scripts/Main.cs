@@ -47,7 +47,8 @@ public class Main : MonoBehaviour
         var mesh =  new Mesh
         {
             vertices = data.Vertices.Select(v => new Vector3(v[0], v[1], v[2])).ToArray(),
-            triangles = data.Indices.Where(indices => indices.Count == 3).SelectMany(innerList => innerList).ToArray()
+            normals = data.Normals.Select(v => new Vector3(v[0], v[1], v[2])).ToArray(),
+            triangles = data.Indices.ToArray()
         };
 
         mesh.RecalculateNormals();
@@ -66,7 +67,11 @@ public class Main : MonoBehaviour
         var spos = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
         var srot = new Vector3(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]); 
         srot *= 180f / Mathf.PI;
-        visuals.transform.SetLocalPositionAndRotation(spos, Quaternion.Euler(srot));
+        
+        _connection.Send(MessageType.MSG, $"{visual.Name} : {visual.Rotation[0]} {visual.Rotation[1]} {visual.Rotation[2]}");
+        visuals.transform.localPosition = spos;
+        visuals.transform.Rotate(srot);
+        _connection.Send(MessageType.MSG, $"{visual.Name} : {visuals.transform.localEulerAngles.x} {visuals.transform.localEulerAngles.y} {visuals.transform.localEulerAngles.z}");
 
 
         for (int i = 0; i < visual.Meshes.Count; i++) {

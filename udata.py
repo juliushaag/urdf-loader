@@ -1,13 +1,7 @@
-from abc import ABC, abstractmethod
-import base64
 from dataclasses import dataclass, is_dataclass
 import dataclasses
-from enum import Enum, auto
-from functools import reduce
-import json
-import struct
-from typing import Any, Iterable, Optional, Self, List, Tuple, Union, Set
-import numpy as np
+from enum import Enum
+from typing import List, Tuple, Set
 
 
 def dataclass_to_dict_rec(obj, exclude : Set = {}): 
@@ -46,9 +40,6 @@ class UEntity:
   name : str
   manipulable : bool
 
-  def package(self):
-    pass
-
 @dataclass
 class UMesh:
   name : str
@@ -57,7 +48,7 @@ class UMesh:
   scale : List[float]
   indices : List[int]
   vertices : List[List[float]]
-  normals : List[List[float]] = None 
+  normals : List[List[float]]
   color : List[float] = None
   material : str = None
 

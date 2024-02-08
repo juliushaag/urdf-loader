@@ -11,10 +11,9 @@ import trimesh
 import trimesh.visual.material as TriMat
 import websockets
 import asyncio
-import msgpack
-# FILE_PATH = "res/models/test/panda.urdf"
 
-FILE_PATH = "res/models/pybullet/robots/panda_arm_hand.urdf"
+
+FILE_PATH = "res/models/pybullet/robots/panda_arm_hand_without_cam.urdf"
 FOLDER = os.path.dirname(FILE_PATH)
 
 
@@ -89,7 +88,7 @@ def convert_visual(visual : URDFVisual) -> UVisual:
     name=visual.name,
     type = visual.geometry.type,
     position=visual.origin.position if hasOrigin else [0.0, 0.0, 0.0],
-    rotation= [-visual.origin.rotation[0], visual.origin.rotation[1], visual.origin.rotation[2]] if hasOrigin else [0.0, 0.0, 0.0], # TODO: WTF ??
+    rotation= [visual.origin.rotation[0], visual.origin.rotation[2], visual.origin.rotation[1]] if hasOrigin else [0.0, 0.0, 0.0], # TODO: WTF ??
     scale = visual.geometry.scale,
     meshes = meshes
   )
@@ -136,11 +135,9 @@ data = URDFData.from_file(FILE_PATH)
 header = UData([convert_urdf(data)])
 data = header.package()
 string_data = json.dumps(data, separators=(',', ':'))
-msgpack_data = msgpack.packb(data)
-cprint(f"Data size msgpack {len(msgpack_data)} : json {len(string_data)}", tag="TIME", tag_color="blue", color='white')
 
 dia_start = time.monotonic()
-with open("test.json", "w") as fp: json.dump(data, fp=fp, separators=(',', ':'))
+# with open("test.json", "w") as fp: json.dump(data, fp=fp, separators=(',', ':'))
 
 end = time.monotonic()
 cprint(f"Compiling took {dia_start - start :.2f}s (debugging {end - dia_start:.2f})", tag="TIME", tag_color="blue", color='white')
@@ -175,6 +172,7 @@ async def ws_server(websocket, path):
 # Start the WebSocket server
 start_server = websockets.serve(ws_server, "localhost", 8053)
 try:
+  cprint("Waiting for connection", tag="SERVER", tag_color="blue", color='white')
   asyncio.get_event_loop().run_until_complete(start_server)
   asyncio.get_event_loop().run_forever()
 except KeyboardInterrupt:

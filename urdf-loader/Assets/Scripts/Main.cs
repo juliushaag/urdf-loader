@@ -63,9 +63,6 @@ public class Main : MonoBehaviour
         GameObject visuals = new GameObject("Visuals");
         visuals.transform.SetParent(parent.transform);
         
-        visuals.transform.localPosition = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
-        visuals.transform.localEulerAngles = new Vector3(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]) * Mathf.Rad2Deg;
-    
 
         for (int i = 0; i < visual.Meshes.Count; i++) {
             MeshData mesh = visual.Meshes[i];
@@ -92,19 +89,26 @@ public class Main : MonoBehaviour
 
             obj.transform.SetParent(visuals.transform);
         }
-      
+
+        
+        visuals.transform.localPosition = new Vector3(visual.Position[0], visual.Position[1],visual.Position[2]);
+        visuals.transform.localEulerAngles = new Vector3(visual.Rotation[0], visual.Rotation[1], visual.Rotation[2]) * Mathf.Rad2Deg;      
     }
     GameObject create_link(GameObject parent, Link link, Entity entity) {
 
         GameObject jointObj = new GameObject(link.Name);
         jointObj.transform.SetParent(parent.transform);
 
-        if (!string.IsNullOrEmpty(link.VisualName)) create_visual(jointObj, entity.Visuals[link.VisualName]); 
+        if (!string.IsNullOrEmpty(link.VisualName)) {
+            create_visual(jointObj, entity.Visuals[link.VisualName]); 
+        }
 
         var joints = entity.Joints.Values.Where(joint => joint.ParentLink == link.Name);
 
-        foreach (var jnt in joints) create_joint(jointObj, jnt, entity);   
-        
+        foreach (var jnt in joints) {
+            create_joint(jointObj, jnt, entity);   
+        }
+
         return jointObj;
     }
 
@@ -115,7 +119,15 @@ public class Main : MonoBehaviour
     
         linkObj.transform.localPosition = new Vector3(joint.Position[0], joint.Position[1], joint.Position[2]);
         linkObj.transform.localEulerAngles = new Vector3(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2]) * Mathf.Rad2Deg;
-    
+
+
+        var controller = linkObj.AddComponent<JointController>(); // setup controller script
+        controller.jointName = joint.Name;
+        controller.maxRot = joint.MaxRot * Mathf.Rad2Deg;
+        controller.minRot = joint.MinRot * Mathf.Rad2Deg;
+        controller.axis = new Vector3(joint.Axis[0], joint.Axis[1], joint.Axis[2]);
+        controller.type = joint.Type;
+
         return linkObj;
     }
 

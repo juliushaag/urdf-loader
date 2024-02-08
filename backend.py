@@ -3,7 +3,7 @@ import math
 import os
 import time
 import numpy as np
-from udata import UData, UEntity, UHeaderType, UMaterial, UMesh, UJoint, ULink, UVisual
+from udata import UData, UEntity, UHeaderType, UJointType, UMaterial, UMesh, UJoint, ULink, UVisual, UVisualType
 from scipy.spatial.transform import Rotation as R
 from print_color import print as cprint
 from parsers.urdf_parser import URDFJoint, URDFLink, URDFVisual, URDFData 
@@ -86,7 +86,7 @@ def convert_visual(visual : URDFVisual) -> UVisual:
   hasOrigin = visual.origin is not None
   return UVisual(
     name=visual.name,
-    type = visual.geometry.type,
+    type = UVisualType(visual.geometry.type.upper()),
     position=visual.origin.position if hasOrigin else [0.0, 0.0, 0.0],
     rotation= [visual.origin.rotation[0], visual.origin.rotation[2], visual.origin.rotation[1]] if hasOrigin else [0.0, 0.0, 0.0], # TODO: WTF ??
     scale = visual.geometry.scale,
@@ -110,7 +110,7 @@ def convert_joint(joint : URDFJoint) -> UJoint:
     name = joint.name,
     parentLink = joint.parent,
     childLink = joint.child,
-    type = joint.type, # TODO convert this properly 
+    type = UJointType(joint.type.upper()), # TODO convert this properly 
     axis = mj2unity_pos(joint.axis),
     position = mj2unity_pos(joint.origin.position) if hasOrigin else [0.0, 0.0, 0.0],
     rotation = mj2unity_euler(joint.origin.rotation) if hasOrigin else [0.0, 0.0, 0.0, 1.0],

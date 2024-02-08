@@ -8,27 +8,23 @@ public class MeshData
     public List<float> Position { get; set; }
     public List<float> Rotation { get; set; }
     public List<float> Scale { get; set; }
-    public List<int> Indices { get; set; }
+
+    public int[] Indices { get; set; }
     public List<List<float>> Vertices { get; set; }
     public List<List<float>> Normals { get; set; }
     public List<float> Color { get; set; }
-    public string Material {get; set; } 
+    public MatData Material {get; set; } 
 }
 
 [Serializable]
 public class MatData
 {
     public string Name { get; set; }
-    public string Id { get; set; }
-    public List<float> Emission { get; set; }
-    public List<float> Ambient { get; set; }
-    public List<float> Diffuse { get; set; }
-    public List<float> Specular { get; set; }
-    public float Shininess { get; set; }
-    public List<float> Reflective { get; set; }
-    public float Reflectivity { get; set; }
-    public List<float> Transparent { get; set; }
-    public float Transparency { get; set; }
+    public List<float> Specular{ get; set;}
+    
+    public List<float> Ambient{ get; set;}
+    
+    public List<float> Diffuse{ get; set;}
 }
 
 [Serializable]
@@ -45,8 +41,6 @@ public class Visual
 
     public List<MeshData> Meshes { get; set; }
 
-    
-    public Dictionary<string, MatData> Materials { get; set; }
 }
 
 
@@ -61,6 +55,10 @@ public class Joint
     public string ChildLink { get; set; }
     public string Type { get; set; }
     public List<float> Axis { get; set; }
+
+    public float MinRot { get; set;} 
+    public float MaxRot { get; set;} 
+    
 }
 
 [Serializable]
@@ -73,7 +71,7 @@ public class Link
 }
 
 [Serializable]
-public class Robot
+public class Entity
 {
     public string Name { get; set; }
     public bool Manipulable { get; set; }

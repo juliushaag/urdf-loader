@@ -1,13 +1,11 @@
-from dataclasses import dataclass, is_dataclass
-import dataclasses
+from dataclasses import dataclass, is_dataclass, asdict
 from enum import Enum
 import math
-from typing import List, Tuple, Set
 
 
 
-def dataclass_to_dict_rec(obj, exclude : Set = {}): 
-  return { key: dataclass_to_dict_rec(value) for key, value in dataclasses.asdict(obj).items() if key not in exclude } if dataclasses.is_dataclass(obj) else obj
+def dataclass_to_dict_rec(obj, exclude : set = {}): 
+  return { key: dataclass_to_dict_rec(value) for key, value in asdict(obj).items() if key not in exclude } if is_dataclass(obj) else obj
 
 
 class UHeaderType(str, Enum):
@@ -27,7 +25,6 @@ class UJointType(str, Enum):
   FIXED     = "FIXED"
   
 class UVisualType(str, Enum):
-  GEOMETRIC = "GEOMETRIC"
   BOX       = "BOX"
   SPHERE    = "SPHERE"
   CYLINDER  = "CYLINDER"
@@ -38,66 +35,62 @@ class UVisualType(str, Enum):
 @dataclass
 class UMaterial:
   name : str
-  specular : List[float]
-  diffuse : List[float]
-  ambient : List[float]
+  specular : list[float]
+  diffuse : list[float]
+  ambient : list[float]
   glossiness : float
 
-  def validate(self):
+  def __post_init__(self):
     assert self.name is not None and len(self.name) > 0
 
 @dataclass
 class UMesh:
   name : str
-  position : List[float]
-  rotation : List[float]
-  scale : List[float]
-  indices : List[int]
-  vertices : List[List[float]]
-  normals : List[List[float]]
+  position : list[float]
+  rotation : list[float]
+  scale : list[float]
+  indices : list[int]
+  vertices : list[list[float]]
+  normals : list[list[float]]
   material : UMaterial = None
 
-  def validate(self):
+  def __post_init__(self):
     assert self.name is not None and len(self.name) > 0
     assert isinstance(self.position, list) and len(self.position) == 3 and isinstance(self.position[0], float)
     assert isinstance(self.rotation, list) and len(self.rotation) == 3 and isinstance(self.rotation[0], float)
-    assert isinstance(self.scale, list) and len(self.scale) == 3 and isinstance(self.scale[0], float)
+    assert isinstance(self.scale, list) and len(self.scale) == 3
 
     assert len(self.normals) == len(self.vertices)
-
-    if self.material is not None: self.material.validate()
 
 @dataclass(frozen=True)
 class UVisual:
   name : str
   type : UVisualType
-  position : List[float]
-  rotation : List[float]
-  scale : List[float]
-  meshes : List[UMesh]
+  position : list[float]
+  rotation : list[float]
+  scale : list[float]
+  meshes : list[UMesh]
 
-  def validate(self):
+  def __post_init__(self):
     assert self.name is not None and len(self.name) > 0
     assert isinstance(self.position, list) and len(self.position) == 3 and isinstance(self.position[0], float)
     assert isinstance(self.rotation, list) and len(self.rotation) == 3 and isinstance(self.rotation[0], float)
     assert isinstance(self.scale, list) and len(self.scale) == 3 and isinstance(self.scale[0], float)
     assert self.type in UVisualType, f"Visual type {self.type} is not valid"
-
-    for mesh in self.meshes: mesh.validate
   
 @dataclass(frozen=True)
 class UJoint:
   name : str
-  position : Tuple[float, float, float]
-  rotation : Tuple[float, float, float]
+  position : list[float]
+  rotation : list[float]
   parentLink : str
   childLink : str
   type : UJointType
-  axis : Tuple[float, float, float]
+  axis : list[float]
   minRot : float
   maxRot : float
 
-  def validate(self):
+  def __post_init__(self):
     assert self.name is not None and len(self.name) > 0
     assert isinstance(self.position, list) and len(self.position) == 3 and isinstance(self.position[0], float)
     assert isinstance(self.rotation, list) and len(self.rotation) == 3 and isinstance(self.rotation[0], float)
@@ -115,10 +108,10 @@ class UJoint:
 class ULink:
   name : str
   visualName : str
-  position : Tuple[float, float, float]
-  rotation : Tuple[float, float, float]
+  position : list[float]
+  rotation : list[float]
 
-  def validate(self):
+  def __post_init__(self):
     assert self.name is not None and len(self.name) > 0
     assert isinstance(self.position, list) and len(self.position) == 3 and isinstance(self.position[0], float)
     assert isinstance(self.rotation, list) and len(self.rotation) == 3 and isinstance(self.rotation[0], float)
@@ -129,18 +122,15 @@ class ULink:
 class UEntity:
   name : str
   manipulable : bool
-  joints : List[UJoint]
-  links : List[ULink]
-  visuals : List[UVisual]
+  joints :  list[UJoint]
+  links :   list[ULink]
+  visuals : list[UVisual]
 
-  def validate(self):
+  def __post_init__(self):
     assert self.name is not None and len(self.name) > 0
-    for joint in self.joints: joint.validate()
-    for link in self.links: link.validate()
-    for visual in self.visuals: visual.validate() 
 
   def package(self) -> dict:
-     return {
+    return {
       "name" : self.name,
       "startLink" : self.links[0].name,
       "manipulable" : self.manipulable,
@@ -152,13 +142,9 @@ class UEntity:
 
 @dataclass(frozen=True)
 class UData():
-  entities : List[UEntity] = None
+  entities : list[UEntity] = None
 
-  def validate(self):
-    for ent in self.entities: ent.validate()
-
-  def package(self) -> List[dict]:
-    self.validate()
+  def package(self) -> list[dict]:
     return [entity.package() for entity in self.entities]
   
 
